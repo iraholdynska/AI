@@ -4,6 +4,7 @@ import customtkinter as ctk
 
 from generator import generate_puzzle
 from validator import find_conflicts, is_solved
+from solver import solve_steps
 
 ctk.set_appearance_mode("light")
 
@@ -116,6 +117,9 @@ class SudokuApp(ctk.CTk):
         self.timer_running = False
         self.elapsed_seconds = 0
 
+        self.ai_steps = None
+        self.ai_auto = False
+
         self._create_widgets()
         self.new_game()
 
@@ -199,6 +203,34 @@ class SudokuApp(ctk.CTk):
         )
         self.sol_btn.pack(side="left", padx=10)
 
+        self.ai_btn = ctk.CTkButton(
+            actions_frame,
+            text="Крок ШІ",
+            font=("Segoe UI", 14, "bold"),
+            fg_color=PURPLE_ACCENT,
+            hover_color=PURPLE_HOVER,
+            text_color="#FFFFFF",
+            corner_radius=20,
+            height=48,
+            width=120,
+            command=self.ai_step
+        )
+        self.ai_btn.pack(side="left", padx=10)
+
+        self.auto_btn = ctk.CTkButton(
+            actions_frame,
+            text="Авто",
+            font=("Segoe UI", 14, "bold"),
+            fg_color=PURPLE_ACCENT,
+            hover_color=PURPLE_HOVER,
+            text_color="#FFFFFF",
+            corner_radius=20,
+            height=48,
+            width=110,
+            command=self.toggle_auto
+        )
+        self.auto_btn.pack(side="left", padx=10)
+
         self.status = ctk.CTkLabel(
             self, text="", font=("Segoe UI", 13), text_color="#6C5C82"
         )
@@ -251,6 +283,7 @@ class SudokuApp(ctk.CTk):
         self.status.configure(text="Оберіть клітинку та введіть число 1-9")
         self.draw()
         self.start_timer()
+        self.reset_ai()
 
     def is_given(self, r, c):
         return self.puzzle[r][c] != 0
@@ -288,6 +321,7 @@ class SudokuApp(ctk.CTk):
         else:
             return
 
+        self.reset_ai()
         self.conflicts = set()
         self.draw()
 
@@ -318,7 +352,56 @@ class SudokuApp(ctk.CTk):
         self.matrix = [row[:] for row in self.solution]
         self.conflicts = set()
         self.stop_timer()
+        self.reset_ai()
         self.draw()
+
+    def reset_ai(self):
+        self.ai_steps = None
+        self.stop_auto()
+
+    def stop_auto(self):
+        self.ai_auto = False
+        self.auto_btn.configure(text="Авто")
+
+    def ai_step(self):
+        if self.matrix is None or self.busy:
+            return False
+        if self.ai_steps is None:
+            self.ai_steps = solve_steps(self.matrix, self.regions)
+        step = next(self.ai_steps, None)
+        if step is None:
+            self.stop_auto()
+            if not is_solved(self.matrix, self.regions):
+                self.status.configure(text="ШІ не знайшов розв'язку з поточних цифр. Приберіть помилки")
+            return False
+        r, c, num, reason = step
+        self.matrix[r][c] = num
+        self.selected = (r, c)
+        self.conflicts = set()
+        self.status.configure(text=f"Клітинка ({r + 1}, {c + 1}) = {num}: {reason}")
+        self.draw()
+        if is_solved(self.matrix, self.regions):
+            self.stop_timer()
+            self.stop_auto()
+            self.status.configure(text="ШІ розв'язав судоку")
+            return False
+        return True
+
+    def toggle_auto(self):
+        if self.ai_auto:
+            self.stop_auto()
+            return
+        self.ai_auto = True
+        self.auto_btn.configure(text="Стоп")
+        self.auto_loop()
+
+    def auto_loop(self):
+        if not self.ai_auto:
+            return
+        if self.ai_step():
+            self.after(400, self.auto_loop)
+        else:
+            self.stop_auto()
 
     def draw(self):
         cv = self.canvas
